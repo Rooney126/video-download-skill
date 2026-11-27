@@ -113,6 +113,12 @@ tikwm_fallback() {
 }
 
 # ---------- 主循环 ----------
+if [ "$#" -eq 0 ]; then
+  echo "用法: bash ttdl.sh \"链接1\" [\"链接2\" ...]"
+  echo "可选: TTDL_DIR=... TTDL_PROXY=... 见 README"
+  exit 0
+fi
+
 for url in "$@"; do
   case "$url" in
     *tiktok.com*|*youtube.com*|*youtu.be*|*instagram.com*) ;;
@@ -188,4 +194,10 @@ if [ "${FALLBACK_COUNT:-0}" -gt 0 ]; then
   echo "注意: 有 ${FALLBACK_COUNT} 条走的是回退路径（画质可能低于原片）。"
   echo "      想让 yt-dlp 直连恢复：yt-dlp -U 更新；仍不行就是 TikTok 侧拒绝，只能等。"
 fi
-[ "${FAIL_COUNT:-0}" -gt 0 ] && echo "有 ${FAIL_COUNT} 条下载失败。"
+# 退出码必须准确：末尾裸 `[ ... ] && echo` 在条件为假时会让整个脚本返回 1，
+# 成功下载也被外部判为失败（2026-11-27 实测踩到）
+if [ "${FAIL_COUNT:-0}" -gt 0 ]; then
+  echo "有 ${FAIL_COUNT} 条下载失败。"
+  exit 1
+fi
+exit 0
