@@ -71,6 +71,8 @@ grep -q "必须.*代理\|必须要代理" "$REPO/README.md" && ok "README 明示
 sed -n '1,20p' "$REPO/README.md" | grep -q "代理" && ok "代理警告在 README 前 20 行（陌生人能看到）" || bad "代理警告埋在文档深处"
 sed -n '1,60p' "$REPO/SKILL.md" | grep -q "代理" && ok "SKILL.md 首次话术含代理" || bad "AI 首次说话不会提代理"
 grep -q "_direct" "$REPO/ttdl.sh" && ok "没配代理时预检直连" || bad "缺直连预检"
+# 确定会失败就该秒退，不该让用户等重试
+sed -n '/无法下载：没有配置代理/,/esac/p' "$REPO/ttdl.sh" | grep -q 'exit 1' && ok "无代理+TikTok 秒退（不白等）" || bad "会让用户白等重试"
 # 只查预检段（第 168 行附近）有没拿代理去 curl；egress_region 探出口地区是正当用途
 if sed -n '/未配置代理/,/仍会尝试下载/p' "$REPO/ttdl.sh" | grep -q '\-x "\$PROXY"'; then
   bad "预检段拿代理探活，会误报（实测同一代理时而000时而200）"
