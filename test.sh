@@ -81,7 +81,10 @@ echo "=== 9. install.sh 覆盖依赖检测 ==="
 for dep in yt-dlp ffprobe; do
   grep -q "has $dep" "$REPO/install.sh" && ok "install.sh 检测 $dep" || bad "install.sh 没检测 $dep"
 done
-grep -q 'read -r ans' "$REPO/install.sh" && ok "install.sh 装前询问，不静默改系统" || bad "install.sh 会静默安装"
+grep -q 'read -r ans' "$REPO/install.sh" && ok "默认装前询问（不静默改系统）" || bad "缺交互确认"
+grep -q -- '--yes' "$REPO/install.sh" && ok "支持 --yes 让 AI 无人值守安装" || bad "缺 --yes"
+# 关键：建议文字不能被当成命令执行
+grep -q 'SUGGEST_IS_CMD' "$REPO/install.sh" && ok "区分「可执行命令」与「建议文字」" || bad "会把建议文字当命令跑"
 
 echo
 echo "结果: $PASS 通过 / $FAIL 失败"
