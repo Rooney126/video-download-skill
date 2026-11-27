@@ -20,12 +20,36 @@ bash install.sh
 
 ### 第 1 步：装 yt-dlp（必需）
 
-| 系统 | 命令 |
-|---|---|
-| macOS | `brew install yt-dlp` |
-| Ubuntu / Debian | `pipx install yt-dlp` |
-| Windows | `winget install yt-dlp.yt-dlp` |
-| 任意系统（有 Python） | `pip install --user -U yt-dlp` |
+| 系统 | 命令 | 要管理员权限吗 |
+|---|---|---|
+| Windows | `winget install yt-dlp.yt-dlp` | **不用**，装到用户目录 |
+| macOS | `brew install yt-dlp` | 不用（但有首次编译耗时） |
+| Ubuntu / Debian | `pipx install yt-dlp` | 装 pipx 那步要 sudo |
+| 任意系统（有 Python） | `pip install --user -U yt-dlp` | **不用** |
+
+**装完一定要确认版本够新：**
+
+```bash
+yt-dlp --version
+```
+
+和 https://github.com/yt-dlp/yt-dlp/releases/latest 比一下。**版本旧会让 TikTok 全线失败**，症状是 `Unexpected response from webpage request`，然后脚本退回低画质接口——你只会看到「画质变差」，看不出原因。
+
+更新：`yt-dlp -U`（pip 装的用 `pip install --user -U yt-dlp`）。
+
+<details><summary>Windows 上 winget 可能遇到的两个坑（实测）</summary>
+
+**① `winget` 命令找不到**
+Windows 10 常见。用全路径调用：
+```powershell
+& "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe" install yt-dlp.yt-dlp
+```
+在 WSL 里通过 cmd 调会因中文路径乱码失败，直接开 PowerShell 跑就行。
+
+**② 本机可能已有 Python 版 yt-dlp**
+如果之前用 pip 装过，`yt-dlp` 可能指向 `AppData\Local\Programs\Python\Python310\Scripts\yt-dlp.exe`，和 winget 装的是两份。先用 `Get-Command yt-dlp` 看清楚指向哪，别装重复了还以为是新的。
+
+</details>
 
 没装 `pipx`？先 `brew install pipx` 或 `sudo apt install pipx && pipx ensurepath`。
 
