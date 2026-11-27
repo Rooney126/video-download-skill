@@ -13,7 +13,41 @@ description: Download TikTok / YouTube / Instagram videos at the highest availab
 
 不需要问用户任何问题，直接跑脚本。
 
-## 第一步：检查依赖（别跳过）
+## 第 0 步：先把脚本拿到本地（最容易漏）
+
+**你（AI）读这个页面时，用户机器上还没有 `ttdl.sh`。** 直接跑 `bash ttdl.sh` 会报 `No such file or directory`。
+
+先确认本地有没有，没有就取：
+
+```bash
+# 检查
+ls ttdl.sh 2>/dev/null && echo "已有" || echo "需要获取"
+
+# 获取方式一：git（推荐）
+git clone https://github.com/Rooney126/video-download-skill.git
+cd video-download-skill
+
+# 获取方式二：没有 git 时，只取两个必需文件
+mkdir -p video-download-skill && cd video-download-skill
+for f in ttdl.sh install.sh; do
+  curl -fsSL -o "$f" "https://raw.githubusercontent.com/Rooney126/video-download-skill/main/$f"
+done
+chmod +x ttdl.sh install.sh
+```
+
+> `raw.githubusercontent.com` 在部分地区被墙。若 curl 失败，改用 GitHub API（**已实测，取回文件与仓库字节一致**）：
+> ```bash
+> for f in ttdl.sh install.sh; do
+>   curl -fsSL "https://api.github.com/repos/Rooney126/video-download-skill/contents/$f" \
+>     | python3 -c "import json,sys,base64;sys.stdout.buffer.write(base64.b64decode(json.load(sys.stdin)['content']))" > "$f"
+> done
+> chmod +x ttdl.sh install.sh
+> ```
+> 注意：不要用 `grep + base64 -d`，GitHub 返回的 base64 带换行，会解出截断文件（实测踩过）。
+
+获取后 `cd` 进那个目录再继续。
+
+## 第 1 步：检查依赖（别跳过）
 
 ```bash
 command -v yt-dlp >/dev/null && echo "yt-dlp OK" || echo "缺 yt-dlp"
@@ -37,7 +71,7 @@ bash install.sh
 
 它会自动识别系统（macOS / Linux / WSL / Windows），列出缺什么、给出对应安装命令，**问过用户才执行**，最后自动跑一遍自检。
 
-## 第二步：跑下载
+## 第 2 步：跑下载
 
 ```bash
 bash ttdl.sh "链接1" "链接2"
