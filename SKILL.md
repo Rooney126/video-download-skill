@@ -13,30 +13,42 @@ description: Download TikTok / YouTube / Instagram videos at the highest availab
 
 不需要问用户任何问题，直接跑脚本。
 
-## 怎么跑
+## 第一步：检查依赖（别跳过）
+
+```bash
+command -v yt-dlp >/dev/null && echo "yt-dlp OK" || echo "缺 yt-dlp"
+command -v node   >/dev/null && echo "node OK"   || echo "缺 node（可选）"
+```
+
+**依赖分三档，缺了行为不同：**
+
+| 依赖 | 必需性 | 缺了会怎样 | 装上能多拿到什么 |
+|---|---|---|---|
+| **yt-dlp** | **必需** | 脚本直接退出 | — |
+| node | 推荐 | TikTok 走回退接口，能出 1080p 但码率低 | **同样 1080p，码率高 25%**（实测 2048KB → 2596KB） |
+| ffmpeg/ffprobe | 推荐 | 不显示分辨率，高画质合流可能失败 | 分辨率显示 + 音视频合流 |
+| jq **或** python3 | 可选 | 用内置 grep 兜底解析 | 解析更稳 |
+
+**缺必需的 yt-dlp 时，不要试图让用户手敲安装命令——直接跑安装脚本：**
+
+```bash
+bash install.sh
+```
+
+它会自动识别系统（macOS / Linux / WSL / Windows），列出缺什么、给出对应安装命令，**问过用户才执行**，最后自动跑一遍自检。
+
+## 第二步：跑下载
 
 ```bash
 bash ttdl.sh "链接1" "链接2"
 ```
 
-多个链接一次传，脚本按顺序处理。
-
 可选环境变量：
 
 ```bash
-TTDL_DIR=~/Movies/搬运 bash ttdl.sh "链接"          # 自定义保存目录（默认 ~/Videos/搬运）
-TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接" # 走代理（默认不走）
+TTDL_DIR=~/Movies/搬运 bash ttdl.sh "链接"           # 自定义保存目录（默认 ~/Videos/搬运）
+TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接"  # 走代理（默认不走）
 ```
-
-## 依赖
-
-```bash
-macOS:   brew install yt-dlp ffmpeg
-Linux:   pipx install yt-dlp && sudo apt install ffmpeg
-Windows: winget install yt-dlp.yt-dlp ffmpeg
-```
-
-`ffmpeg` 只用于显示分辨率，缺了脚本照样能下。
 
 ## 输出长什么样
 
@@ -61,13 +73,19 @@ Windows: winget install yt-dlp.yt-dlp ffmpeg
 3. **重试要在脚本层包，不能只靠 `--retries`**。
    CDN 侧常见 `[SSL: UNEXPECTED_EOF_WHILE_READING]`。yt-dlp 自带的 `--retries N` 都挂在**同一条连接**上重试，连接彻底断了它不会重新握手，N 次全废。脚本外层再包 3 轮完整重下才救得回来。
 
-4. **元数据一次调用拿多个字段**：
+4. **`--js-runtimes node` 不能硬写**。
+   没装 node 的机器上，硬传这个参数会让 yt-dlp 直接报 `Unexpected response from webpage request`，连回退机会都没有。必须先 `command -v node` 检测，存在才传。
+
+5. **元数据一次调用拿多个字段**：
    `yt-dlp --print "%(uploader)s" --print "%(id)s"` 输出多行，比拼分隔符可靠（`\t` 分隔在某些 shell 里会被 `tr` 吃掉）。
 
-5. **`uploader` 才是账号名，`uploader_id` 是数字 UID**。
+6. **`uploader` 才是账号名，`uploader_id` 是数字 UID**。
    用 `uploader_id` 命名会得到 `7174046275980002305_7701567116046011680.mp4` 这种鬼东西。
 
-6. **tikwm 回退只在 yt-dlp 彻底失败时用**，且必须优先 `hdplay`：
+7. **JSON 解析不能强依赖 python3**。
+   回退接口返回 JSON，用 `jq → python3 → grep` 三级降级，任何一个都缺也能跑。
+
+8. **tikwm 回退只在 yt-dlp 彻底失败时用**，且必须优先 `hdplay`：
    ```python
    d.get('hdplay') or d.get('play')
    ```
@@ -83,6 +101,8 @@ bytevc1_1080p mp4 1080x1920   ← 通常最高
 ```
 
 **源只有 540p 的作者，任何工具都提不上来**——那是他上传时压的。这种情况直接告诉用户「这就是源码率上限」，不要继续折腾。
+
+同样 1080p，有无 node 拿到的码率不同（实测 2048KB vs 2596KB）。想让用户拿到最高画质，建议他装 node。
 
 ## 平台限制
 
