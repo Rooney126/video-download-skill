@@ -1,48 +1,72 @@
-# ===== 测试：另一个人的机器上能不能跑通 =====
-# 关键：不能依赖本仓库外的任何文件、路径、代理端口
+# ===== 可移植性 + 依赖降级 自检 =====
+# 目标：在别人的干净机器上也能跑通，缺依赖时给出可读的提示而不是崩
 
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PASS=0
 FAIL=0
 
-ok()   { echo "  ✅ $1"; PASS=$((PASS+1)); }
-bad()  { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
+ok()  { echo "  ✅ $1"; PASS=$((PASS+1)); }
+bad() { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
 
 echo "=== 1. 语法 ==="
-bash -n "$REPO/ttdl.sh" && ok "ttdl.sh 语法正确" || bad "ttdl.sh 语法错误"
+bash -n "$REPO/ttdl.sh"    && ok "ttdl.sh 语法正确"   || bad "ttdl.sh 语法错误"
+bash -n "$REPO/install.sh" && ok "install.sh 语法正确" || bad "install.sh 语法错误"
 
-echo "=== 2. 没有硬编码路径 ==="
-if grep -nE '/mnt/c/|[A-Z]:\\\\\\\\Users|127\.0\.0\.1:7897|powershell\.exe' "$REPO/ttdl.sh" >/dev/null 2>&1; then
+echo "=== 2. 没有硬编码路径/端口 ==="
+if grep -nE '/mnt/c/|[A-Z]:\\\\Users|127\.0\.0\.1:7897|powershell\.exe' "$REPO/ttdl.sh" >/dev/null 2>&1; then
   bad "发现硬编码路径/端口，别人机器会挂："
-  grep -nE '/mnt/c/|[A-Z]:\\\\\\\\Users|127\.0\.0\.1:7897|powershell\.exe' "$REPO/ttdl.sh"
+  grep -nE '/mnt/c/|[A-Z]:\\\\Users|127\.0\.0\.1:7897|powershell\.exe' "$REPO/ttdl.sh"
 else
   ok "无硬编码路径、无固定代理端口"
 fi
 
-echo "=== 3. 依赖检查行为 ==="
-if command -v yt-dlp >/dev/null 2>&1; then
-  ok "yt-dlp 已安装"
-else
-  echo "  ⚠️  本机没装 yt-dlp，跳过实际下载测试"
-fi
+echo "=== 3. 必需依赖检查 ==="
+command -v yt-dlp >/dev/null 2>&1 && ok "本机 yt-dlp 已装（可跑真下载）" || echo "  ⚠️  本机没装 yt-dlp，跳过实际下载"
 
-echo "=== 4. 参数化：保存目录可改 ==="
-if grep -q 'TTDL_DIR' "$REPO/ttdl.sh"; then ok "TTDL_DIR 可配置"; else bad "缺 TTDL_DIR"; fi
-if grep -q 'TTDL_PROXY' "$REPO/ttdl.sh"; then ok "TTDL_PROXY 可配置"; else bad "缺 TTDL_PROXY"; fi
+echo "=== 4. 参数化 ==="
+grep -q 'TTDL_DIR'   "$REPO/ttdl.sh" && ok "TTDL_DIR 可配置"   || bad "缺 TTDL_DIR"
+grep -q 'TTDL_PROXY' "$REPO/ttdl.sh" && ok "TTDL_PROXY 可配置" || bad "缺 TTDL_PROXY"
 
-echo "=== 5. 最高画质选择逻辑 ==="
-grep -q 'S "res,br"' "$REPO/ttdl.sh" && ok "用 -S res,br 选最高档" || bad "没选最高档"
-grep -q "hdplay" "$REPO/ttdl.sh" && ok "回退优先 hdplay（不是 play）" || bad "回退用了 play（只有 540p）"
+echo "=== 5. 最高画质逻辑 ==="
+grep -q 'S "res,br"' "$REPO/ttdl.sh" && ok "用 -S res,br 选最高档"        || bad "没选最高档"
+grep -q "hdplay"     "$REPO/ttdl.sh" && ok "回退优先 hdplay（不是 play）"  || bad "回退用了 play（只有 540p）"
 
 echo "=== 6. 已知坑的防护 ==="
-grep -q 'rm -f "\$out"' "$REPO/ttdl.sh" && ok "下载前删除同名文件" || bad "没删同名文件（会静默跳过）"
-grep -q 'for attempt in 1 2 3' "$REPO/ttdl.sh" && ok "脚本层重试（应对 SSL 断流）" || bad "缺脚本层重试"
-grep -q 'force-overwrites' "$REPO/ttdl.sh" && ok "force-overwrites 已开" || bad "缺 force-overwrites"
+grep -q 'rm -f "\$out"'        "$REPO/ttdl.sh" && ok "下载前删除同名文件"           || bad "没删同名文件（会静默跳过）"
+grep -q 'for attempt in 1 2 3' "$REPO/ttdl.sh" && ok "脚本层重试（应对 SSL 断流）"   || bad "缺脚本层重试"
+grep -q 'force-overwrites'     "$REPO/ttdl.sh" && ok "force-overwrites 已开"        || bad "缺 force-overwrites"
 
-echo "=== 7. 空参数不炸 ==="
+echo "=== 7. 可选依赖必须优雅降级 ==="
+# node 缺失时不能硬传 --js-runtimes，否则 yt-dlp 直接报错
+if grep -q 'js-runtimes' "$REPO/ttdl.sh"; then
+  if grep -qE 'HAS_NODE" -eq 1.*js-runtimes|js-runtimes.*HAS_NODE' "$REPO/ttdl.sh" || \
+     grep -q 'HAS_NODE' "$REPO/ttdl.sh"; then
+    ok "node 缺失时降级（不硬传 --js-runtimes）"
+  else
+    bad "硬写 --js-runtimes node，没装 node 的机器会失败"
+  fi
+else
+  ok "不依赖 js-runtimes"
+fi
+# ffprobe 缺失不能影响下载
+grep -q 'HAS_FFPROBE' "$REPO/ttdl.sh" && ok "ffprobe 缺失时降级（不显示分辨率）" || bad "ffprobe 是硬依赖"
+# JSON 解析不能强依赖 python3
+if grep -q 'json_get' "$REPO/ttdl.sh"; then
+  grep -q 'jq' "$REPO/ttdl.sh" && ok "JSON 解析有 jq → python3 → grep 三级兜底" || bad "JSON 解析无兜底"
+else
+  bad "缺 JSON 解析兜底"
+fi
+
+echo "=== 8. 空参数不炸 ==="
 out=$(bash "$REPO/ttdl.sh" 2>&1)
 echo "$out" | grep -q "完成" && ok "空参数正常退出" || bad "空参数行为异常: $out"
+
+echo "=== 9. install.sh 覆盖依赖检测 ==="
+for dep in yt-dlp node ffprobe; do
+  grep -q "has $dep" "$REPO/install.sh" && ok "install.sh 检测 $dep" || bad "install.sh 没检测 $dep"
+done
+grep -q 'read -r ans' "$REPO/install.sh" && ok "install.sh 装前询问，不静默改系统" || bad "install.sh 会静默安装"
 
 echo
 echo "结果: $PASS 通过 / $FAIL 失败"
