@@ -94,6 +94,31 @@ probe_res() {
 
 filesize() { stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null || echo 0; }
 
+# 探测代理出口地区。TikTok 对部分地区的出口 IP 会直接拒绝，
+# 表现为 yt-dlp 报 Unexpected response —— 这和版本无关，换节点就好。
+egress_region() {
+  local loc=""
+  if [ -n "$PROXY" ]; then
+    loc=$(curl -s --max-time 10 -x "$PROXY" "https://www.cloudflare.com/cdn-cgi/trace" 2>/dev/null \
+          | sed -n 's/^loc=//p' | head -1)
+  else
+    loc=$(curl -s --max-time 10 "https://www.cloudflare.com/cdn-cgi/trace" 2>/dev/null \
+          | sed -n 's/^loc=//p' | head -1)
+  fi
+  printf '%s' "${loc:-unknown}"
+}
+
+# 已知会拒 TikTok 直连的地区（依据：实测 + 社区反馈，非穷举）
+region_tiktok_note() {
+  case "$1" in
+    HK) echo "香港出口常被 TikTok 拒绝，换日本/新加坡/美国节点重试" ;;
+    CN) echo "中国大陆出口无法直连 TikTok，必须走代理" ;;
+    unknown) echo "出口地区探测失败，无法判断是否地域限制" ;;
+    *) echo "" ;;
+  esac
+}
+
+
 # 回退：tikwm 解析（仅 TikTok）。必须优先 hdplay，play 固定 540p。
 tikwm_fallback() {
   local url="$1" out="$2"
@@ -161,6 +186,10 @@ for url in "$@"; do
   if [ "$(filesize "$out")" -lt 20000 ]; then
     echo "  ⚠ yt-dlp 直连失败，回退第三方接口（画质可能低于原片）"
     echo "    原因见 /tmp/ttdl_last.log；可先试 yt-dlp -U 更新"
+    _rg=$(egress_region)
+    _rn=$(region_tiktok_note "$_rg")
+    echo "    当前代理出口: ${_rg}"
+    [ -n "$_rn" ] && echo "    → ${_rn}"
     QUALITY_PATH="fallback"
     QUALITY_NOTE="画质可能低于原片"
     case "$url" in
