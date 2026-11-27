@@ -177,21 +177,16 @@ if [ "$#" -eq 0 ]; then
   exit 0
 fi
 
-# 大陆网络环境下没代理 = 必失败。开工前先说清楚，别让用户白等。
-_pre=""
-if [ -n "$PROXY" ]; then
-  _pre=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -x "$PROXY" https://www.tiktok.com/ 2>/dev/null)
-else
-  _pre=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://www.tiktok.com/ 2>/dev/null)
-fi
-if [ "${_pre:-000}" = "000" ]; then
-  if [ -z "$PROXY" ]; then
-    echo "⚠ TikTok 直连不通（000）。中国大陆需代理："
-    echo "    TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh \"链接\""
-  else
-    echo "⚠ 代理 $PROXY 访问 TikTok 不通（000），先检查代理是否开启、节点是否可用。"
+# 只在「完全没配代理」时提前警告——这是确定会失败的情况。
+# 已配代理时不做预检：curl 探活会抖动（同一代理时而 000 时而 200），
+# 误报“不通”反而让用户以为出问题，不如让真实下载当唯一真相。
+if [ -z "$PROXY" ]; then
+  _direct=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://www.tiktok.com/ 2>/dev/null)
+  if [ "${_direct:-000}" = "000" ]; then
+    echo "⚠ 未配置代理，且直连 TikTok 不通（000）。"
+    echo "   中国大陆需代理：TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh \"链接\""
+    echo "   仍会尝试下载（YouTube 有时可直连）。"
   fi
-  echo "   仍会尝试下载，但大概率失败。"
 fi
 
 for url in "$@"; do
@@ -267,6 +262,11 @@ for url in "$@"; do
     FAIL_COUNT=$((FAIL_COUNT+1))
   fi
 done
+
+# 首次成功下载后写就绪标记，让 AI 下次不再重复解说工具用途
+if [ "${FAIL_COUNT:-0}" -eq 0 ]; then
+  mkdir -p "$HOME/.config/ttdl" 2>/dev/null && : > "$HOME/.config/ttdl/ready" 2>/dev/null
+fi
 
 echo "=== 完成，素材表: $CSV ==="
 if [ "${FALLBACK_COUNT:-0}" -gt 0 ]; then
