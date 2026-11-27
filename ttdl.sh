@@ -7,10 +7,10 @@
 #   TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接"
 #
 # 依赖说明（详见 README）:
-#   必需 - yt-dlp
-#   推荐 - node      : 让 yt-dlp 解开 TikTok 的 JS 挑战，直接拿到原始最高码率
+#   必需 - yt-dlp（版本要新！旧版本会让 TikTok 全线失败并退回低画质）
 #   推荐 - ffmpeg    : 用于显示分辨率、合流高画质音视频
 #   可选 - jq 或 python3 : 解析回退接口的 JSON；都没有也能跑（内置 grep 兜底）
+#   不需要 node —— 2026-11-27 实测 --no-js-runtimes 与带 node 结果完全一致
 
 set -uo pipefail
 
@@ -22,33 +22,49 @@ UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 mkdir -p "$DIR"
 [ -f "$CSV" ] || echo "时间,平台,作者,视频ID,文件,备注" > "$CSV"
 
+FALLBACK_COUNT=0
+FAIL_COUNT=0
+
 die() { echo "错误: $*" >&2; exit 1; }
 
 # ---------- 环境探测 ----------
-HAS_NODE=0;    command -v node    >/dev/null 2>&1 && HAS_NODE=1
 HAS_FFPROBE=0; command -v ffprobe >/dev/null 2>&1 && HAS_FFPROBE=1
+
+# yt-dlp 版本过旧会让 TikTok 报 Unexpected response，静默退回低码率接口。
+# 这里只做提示不做阻断：拿不到版本号或解析失败都不影响下载。
+check_ytdlp_age() {
+  local v datepart
+  v=$(yt-dlp --version 2>/dev/null | head -1)
+  command -v date >/dev/null 2>&1 || return 0
+  datepart=$(printf '%s' "$v" | grep -oE '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}')
+  [ -z "$datepart" ] && return 0
+  local vsec nowsec
+  vsec=$(date -d "$(printf '%s' "$datepart" | tr '.' '-')" +%s 2>/dev/null) || return 0
+  nowsec=$(date +%s)
+  local days=$(( (nowsec - vsec) / 86400 ))
+  if [ "$days" -gt 60 ]; then
+    echo "提示: yt-dlp 是 $v（约 ${days} 天前）。版本过旧时 TikTok 会拒绝请求，"
+    echo "      表现为退回低画质接口。建议先更新: yt-dlp -U  或  pip install --user -U yt-dlp"
+  fi
+}
 
 command -v yt-dlp >/dev/null 2>&1 || die "没装 yt-dlp（必需）：
   macOS:   brew install yt-dlp
   Linux:   pipx install yt-dlp   或  pip install --user -U yt-dlp
   Windows: winget install yt-dlp.yt-dlp
-装完再跑。还想顺手解决 node/ffmpeg 就一起装：
-  macOS: brew install yt-dlp node ffmpeg
-  Linux: sudo apt install ffmpeg nodejs && pipx install yt-dlp"
+装完再跑。想顺手装 ffmpeg（显示分辨率用）：
+  macOS: brew install yt-dlp ffmpeg
+  Linux: sudo apt install ffmpeg && pipx install yt-dlp"
 
-if [ "$HAS_NODE" -eq 0 ]; then
-  echo "提示: 未检测到 node。yt-dlp 解不开 TikTok 的 JS 挑战，画质可能不是最高。"
-  echo "      想要最高画质请装 node；不装也能下，只是会走回退接口。"
-fi
+check_ytdlp_age
 if [ "$HAS_FFPROBE" -eq 0 ]; then
   echo "提示: 未检测到 ffprobe，跳过分辨率显示。装 ffmpeg 即可。"
 fi
 
 # ---------- 工具函数 ----------
-# yt-dlp 调用：只有装了 node 才传 --js-runtimes，硬写会在没 node 的机器上直接报错
+# yt-dlp 调用：数组传参，避免代理参数缺失时留下空字符串参数
 ytdlp() {
   local -a a=(yt-dlp --socket-timeout 20 --retries 3)
-  [ "$HAS_NODE" -eq 1 ] && a+=(--js-runtimes node)
   [ -n "$PROXY" ] && a+=(--proxy "$PROXY")
   "${a[@]}" "$@"
 }
@@ -133,8 +149,14 @@ for url in "$@"; do
     [ "$attempt" -lt 3 ] && { echo "  第${attempt}轮没成，重试…"; sleep 2; }
   done
 
+  # 记录走的哪条路径：native = yt-dlp 直连（最高画质）；fallback = 第三方回退（画质可能更低）
+  QUALITY_PATH="native"
+  QUALITY_NOTE=""
   if [ "$(filesize "$out")" -lt 20000 ]; then
-    echo "  yt-dlp 没拿到，回退 tikwm"
+    echo "  ⚠ yt-dlp 直连失败，回退第三方接口（画质可能低于原片）"
+    echo "    原因见 /tmp/ttdl_last.log；可先试 yt-dlp -U 更新"
+    QUALITY_PATH="fallback"
+    QUALITY_NOTE="画质可能低于原片"
     case "$url" in
       *tiktok.com*) tikwm_fallback "$url" "$out" ;;
     esac
@@ -143,14 +165,27 @@ for url in "$@"; do
 
   if [ "$size" -gt 20000 ]; then
     res=$(probe_res "$out")
+    br=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$out" 2>/dev/null)
+    [ -n "${br:-}" ] && br="$((br/1000))kbps"
     desc=$(ytdlp --print "%(title)s" --skip-download "$url" 2>/dev/null | head -1 | tr ',' '，' | cut -c1-40)
-    echo "$(date '+%m-%d %H:%M'),TikTok,$author,$id,$out,$desc ${res:-}" >> "$CSV"
-    echo "  OK: $out ($((size/1024))KB${res:+, $res})"
+    echo "$(date '+%m-%d %H:%M'),TikTok,$author,$id,$out,$desc ${res:-} ${br:-} [$QUALITY_PATH]" >> "$CSV"
+    echo "  OK: $out ($((size/1024))KB${res:+, $res}${br:+, $br})"
+    if [ "$QUALITY_PATH" = "fallback" ]; then
+      echo "  ⚠ 本条走的是回退路径，码率可能低于原片。要最高画质需 yt-dlp 直连可用。"
+      FALLBACK_COUNT=$((FALLBACK_COUNT+1))
+    fi
   else
     rm -f "$out"
     echo "  失败: $url"
     echo "        诊断: 日志见 /tmp/ttdl_last.log"
+    FAIL_COUNT=$((FAIL_COUNT+1))
   fi
 done
 
 echo "=== 完成，素材表: $CSV ==="
+if [ "${FALLBACK_COUNT:-0}" -gt 0 ]; then
+  echo ""
+  echo "注意: 有 ${FALLBACK_COUNT} 条走的是回退路径（画质可能低于原片）。"
+  echo "      想让 yt-dlp 直连恢复：yt-dlp -U 更新；仍不行就是 TikTok 侧拒绝，只能等。"
+fi
+[ "${FAIL_COUNT:-0}" -gt 0 ] && echo "有 ${FAIL_COUNT} 条下载失败。"
