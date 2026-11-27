@@ -65,6 +65,13 @@ else
   bad "缺 JSON 解析兜底"
 fi
 
+echo "=== 7b. 代理前提必须写到位 ==="
+grep -q "TTDL_PROXY" "$REPO/README.md" && ok "README 说明代理用法" || bad "README 没写代理"
+grep -q "必须.*代理\|必须要代理" "$REPO/README.md" && ok "README 明示代理是硬前提" || bad "README 没强调必须代理"
+sed -n '1,20p' "$REPO/README.md" | grep -q "代理" && ok "代理警告在 README 前 20 行（陌生人能看到）" || bad "代理警告埋在文档深处"
+sed -n '1,60p' "$REPO/SKILL.md" | grep -q "代理" && ok "SKILL.md 首次话术含代理" || bad "AI 首次说话不会提代理"
+grep -q "直连不通\|_pre" "$REPO/ttdl.sh" && ok "脚本开工前预检代理" || bad "脚本不预检代理"
+
 echo "=== 8. 空参数与退出码 ==="
 out=$(bash "$REPO/ttdl.sh" 2>&1); rc=$?
 [ "$rc" -eq 0 ] && ok "空参数退出码 0" || bad "空参数退出码 $rc（应为 0）"
