@@ -177,15 +177,26 @@ if [ "$#" -eq 0 ]; then
   exit 0
 fi
 
-# 只在「完全没配代理」时提前警告——这是确定会失败的情况。
-# 已配代理时不做预检：curl 探活会抖动（同一代理时而 000 时而 200），
-# 误报“不通”反而让用户以为出问题，不如让真实下载当唯一真相。
+# 没配代理 + 直连不通 = 确定失败。直接退出，不让用户干等 5 分钟。
 if [ -z "$PROXY" ]; then
   _direct=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://www.tiktok.com/ 2>/dev/null)
   if [ "${_direct:-000}" = "000" ]; then
-    echo "⚠ 未配置代理，且直连 TikTok 不通（000）。"
-    echo "   中国大陆需代理：TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh \"链接\""
-    echo "   仍会尝试下载（YouTube 有时可直连）。"
+    case "$*" in
+      *tiktok.com*)
+        echo "❌ 无法下载：没有配置代理，且直连 TikTok 不通（000）。"
+        echo ""
+        echo "   中国大陆访问 TikTok 必须走代理。两种做法："
+        echo "   1. 先开代理，再指定："
+        echo "      TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh \"链接\""
+        echo "   2. 把代理地址告诉我，我帮你跑。"
+        echo ""
+        echo "   （为避免白等 5 分钟重试，此处直接退出）"
+        exit 1
+        ;;
+      *)
+        echo "⚠ 未配置代理，直连 TikTok 不通（000）。YouTube 有时可直连，继续尝试…"
+        ;;
+    esac
   fi
 fi
 
