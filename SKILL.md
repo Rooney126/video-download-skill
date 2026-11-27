@@ -1,6 +1,6 @@
 ---
 name: video-download
-description: Download TikTok / YouTube / Instagram videos at the highest available quality, with a simple ledger. Use when the user sends a video link and wants it saved, re-uploaded, archived, or reposted (搬运/下载/存下来).
+description: Download TikTok / YouTube videos at the highest available quality, with a simple ledger. Requires a working proxy in mainland China (direct connections return 000). Use when the user sends a video link and wants it saved, re-uploaded, archived, or reposted (搬运/下载/存下来).
 ---
 
 # video-download
@@ -12,14 +12,27 @@ description: Download TikTok / YouTube / Instagram videos at the highest availab
 用户把仓库丢给你，通常还不知道它具体能做什么。**先用一两句说清楚，再动手：**
 
 > 这个工具能把 TikTok / YouTube 的视频下到本地，自动选最高画质，按「作者_视频ID.mp4」命名，并记一份素材表。
+> **前提：需要一个可用的代理（中国大陆直连这两个平台都不通）。** 没有代理的话下载会失败。
 > 我需要先检查并装好依赖（约 1 分钟），之后你把链接发我就行。
+
+**先把代理情况问清楚，再开始装依赖：**
+
+```bash
+# 先测直连行不行
+curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://www.tiktok.com/ 2>/dev/null
+```
+
+- 返回 `200`/`302` → 能直连，不需要代理
+- 返回 `000` → 必须走代理，接着问用户：
+  - **有没有代理？地址和端口是多少？**（常见 `http://127.0.0.1:7890` / `7897`）
+  - 没有代理 → **直接告诉用户：这个工具在当前网络环境下无法使用，先去弄代理，否则装了也下不了。** 不要把“装完就能用”的错预期给出去。
 
 然后按第 -1 → 第 0 → 第 1 → 第 2 步执行。
 
 **首次使用要说清的三个事实**（避免用户预期错位）：
 
-1. **TikTok 最高 1080p**，取决于作者上传的源；源是 540p 就提不上去。
-2. **两个平台在大陆都需要代理**（实测直连均为 000）。TikTok 额外要求出口**不能是香港**（常被拒），日本/新加坡/美国可用；YouTube 对地区不敏感但要 **node + ffmpeg**。
+1. **必须要代理**（在中国大陆）。实测直连 TikTok / YouTube 均返回 `000`。没有可用代理 = 装了也用不了，**这是硬前提，必须在动手前确认**。
+2. **TikTok 最高 1080p**，取决于作者上传的源；源是 540p 就提不上去。TikTok 额外要求代理出口**不能是香港**（常被拒），日本/新加坡/美国可用；YouTube 对地区不敏感但要 **node + ffmpeg**。
 3. **Instagram 下不了**（需登录 cookie，未内置）。
 
 ## 什么时候用
