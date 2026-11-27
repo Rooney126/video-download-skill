@@ -70,7 +70,15 @@ grep -q "TTDL_PROXY" "$REPO/README.md" && ok "README 说明代理用法" || bad 
 grep -q "必须.*代理\|必须要代理" "$REPO/README.md" && ok "README 明示代理是硬前提" || bad "README 没强调必须代理"
 sed -n '1,20p' "$REPO/README.md" | grep -q "代理" && ok "代理警告在 README 前 20 行（陌生人能看到）" || bad "代理警告埋在文档深处"
 sed -n '1,60p' "$REPO/SKILL.md" | grep -q "代理" && ok "SKILL.md 首次话术含代理" || bad "AI 首次说话不会提代理"
-grep -q "直连不通\|_pre" "$REPO/ttdl.sh" && ok "脚本开工前预检代理" || bad "脚本不预检代理"
+grep -q "_direct" "$REPO/ttdl.sh" && ok "没配代理时预检直连" || bad "缺直连预检"
+# 只查预检段（第 168 行附近）有没拿代理去 curl；egress_region 探出口地区是正当用途
+if sed -n '/未配置代理/,/仍会尝试下载/p' "$REPO/ttdl.sh" | grep -q '\-x "\$PROXY"'; then
+  bad "预检段拿代理探活，会误报（实测同一代理时而000时而200）"
+else
+  ok "预检段不用代理探活，避免误报"
+fi
+sed -n '1,80p' "$REPO/SKILL.md" | grep -q 'ALREADY_SETUP' && ok "SKILL 有首次/后续分流（不重复解说）" || bad "每次都重复解说，会烦人"
+grep -q 'ttdl/ready' "$REPO/ttdl.sh" && ok "成功下载后写就绪标记" || bad "缺就绪标记"
 
 echo "=== 8. 空参数与退出码 ==="
 out=$(bash "$REPO/ttdl.sh" 2>&1); rc=$?
