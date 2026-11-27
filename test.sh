@@ -55,9 +55,17 @@ else
   bad "缺 JSON 解析兜底"
 fi
 
-echo "=== 8. 空参数不炸 ==="
-out=$(bash "$REPO/ttdl.sh" 2>&1)
-echo "$out" | grep -q "完成" && ok "空参数正常退出" || bad "空参数行为异常: $out"
+echo "=== 8. 空参数与退出码 ==="
+out=$(bash "$REPO/ttdl.sh" 2>&1); rc=$?
+[ "$rc" -eq 0 ] && ok "空参数退出码 0" || bad "空参数退出码 $rc（应为 0）"
+echo "$out" | grep -q "用法" && ok "空参数打印用法" || bad "空参数没给用法提示"
+# 末尾裸 [ ] && echo 会让成功也返回 1，这是已踩过的坑
+if tail -5 "$REPO/ttdl.sh" | grep -qE '^\s*\[ .*\] && echo'; then
+  bad "末尾有裸 [ ] && echo，成功也会返回非 0"
+else
+  ok "结尾显式 exit，成功路径返回 0"
+fi
+grep -q 'exit 0' "$REPO/ttdl.sh" && grep -q 'exit 1' "$REPO/ttdl.sh" && ok "成功/失败退出码分别显式声明" || bad "缺显式退出码"
 
 echo "=== 9. install.sh 覆盖依赖检测 ==="
 for dep in yt-dlp ffprobe; do
