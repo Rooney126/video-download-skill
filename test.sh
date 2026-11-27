@@ -37,12 +37,22 @@ grep -q 'rm -f "\$out"'        "$REPO/ttdl.sh" && ok "下载前删除同名文�
 grep -q 'for attempt in 1 2 3' "$REPO/ttdl.sh" && ok "脚本层重试（应对 SSL 断流）"   || bad "缺脚本层重试"
 grep -q 'force-overwrites'     "$REPO/ttdl.sh" && ok "force-overwrites 已开"        || bad "缺 force-overwrites"
 
+echo "=== 7a. 平台感知的 format 选择器 ==="
+grep -q 'format_selector' "$REPO/ttdl.sh" && ok "有 format_selector 分平台处理" || bad "缺分平台格式选择"
+# YouTube 高清档是 video-only，必须 bv+ba 合流；裸 b 只能 360p
+grep -q 'bv\*\[height' "$REPO/ttdl.sh" && ok "非 TikTok 用 bv+ba 合流（否则只有 360p）" || bad "缺 bv+ba 合流"
+grep -q 'TTDL_MAX_RES' "$REPO/ttdl.sh" && ok "分辨率上限可配（TTDL_MAX_RES）" || bad "分辨率写死"
+# YouTube 需要 node，TikTok 不需要——必须条件传
+grep -q 'HAS_NODE' "$REPO/ttdl.sh" && ok "node 条件传入（YouTube 要，TikTok 不强求）" || bad "node 处理有误"
+grep -q 'HAS_FFMPEG' "$REPO/ttdl.sh" && ok "检测 ffmpeg（YouTube 合流需要）" || bad "没检测 ffmpeg"
+
 echo "=== 7. 可选依赖必须优雅降级 ==="
 # node 不需要：新版 yt-dlp 无 JS 运行时也能拿最高档（2026-11-27 实测）
+# node 是条件依赖：TikTok 不需要、YouTube 需要。硬写或不写都是错的
 if grep -qE '^\s*[^#]*js-runtimes' "$REPO/ttdl.sh"; then
-  bad "仍在传 --js-runtimes，但实测不需要（会误导用户装 node）"
+  grep -q 'HAS_NODE' "$REPO/ttdl.sh" && ok "js-runtimes 受 HAS_NODE 条件控制" || bad "硬传 --js-runtimes"
 else
-  ok "不依赖 node / js-runtimes"
+  bad "完全没传 --js-runtimes，YouTube 会拿不到高清档"
 fi
 # 旧版 yt-dlp 才是真根因，脚本必须提示版本
 grep -q 'check_ytdlp_age' "$REPO/ttdl.sh" && ok "检测 yt-dlp 版本新鲜度" || bad "缺版本新鲜度检查"
