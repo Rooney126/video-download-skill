@@ -13,6 +13,21 @@ description: Download TikTok / YouTube / Instagram videos at the highest availab
 
 不需要问用户任何问题，直接跑脚本。
 
+## 第 -1 步：先确认 yt-dlp 是新的（最容易忽略的根因）
+
+**yt-dlp 版本过旧会让所有 TikTok 链接统一报 `Unexpected response from webpage request`**，脚本退回低画质第三方接口，用户看到的就是「画质变差了」，但看不出原因。
+
+**根因是版本，不是缺 node。** 2026-11-27 同机实测：`2026.10.26` 全线失败；升到 `2026.11.23` 后一次成功，且 `--no-js-runtimes`（完全禁用 JS 运行时）下依然拿到 1440×1080 / 1748052bps，与带 node 完全一致。**别让用户去装 node，那是无效动作。**
+
+```bash
+yt-dlp --version            # 与 https://github.com/yt-dlp/yt-dlp/releases/latest 对比
+yt-dlp -U                   # pip 装的用 pip install --user -U yt-dlp
+```
+
+2026-11-27 实测：`2026.10.26` 对 TikTok 全线失败；升到 `2026.11.23` 后同一链接一次成功、拿到原生 1440×1080 最高码率。**这一个月差了一个重要修复。**
+
+脚本会自动判版本新鲜度（超过 60 天提示更新），但**不会阻断**——旧版本仍可退回低画质接口工作。
+
 ## 第 0 步：先把脚本拿到本地（最容易漏）
 
 **你（AI）读这个页面时，用户机器上还没有 `ttdl.sh`。** 直接跑 `bash ttdl.sh` 会报 `No such file or directory`。
@@ -50,8 +65,7 @@ chmod +x ttdl.sh install.sh
 ## 第 1 步：检查依赖（别跳过）
 
 ```bash
-command -v yt-dlp >/dev/null && echo "yt-dlp OK" || echo "缺 yt-dlp"
-command -v node   >/dev/null && echo "node OK"   || echo "缺 node（可选）"
+command -v yt-dlp >/dev/null && echo "yt-dlp $(yt-dlp --version)" || echo "缺 yt-dlp"
 ```
 
 **依赖分三档，缺了行为不同：**
@@ -59,7 +73,8 @@ command -v node   >/dev/null && echo "node OK"   || echo "缺 node（可选）"
 | 依赖 | 必需性 | 缺了会怎样 | 装上能多拿到什么 |
 |---|---|---|---|
 | **yt-dlp** | **必需** | 脚本直接退出 | — |
-| node | 推荐 | yt-dlp 解不开 TikTok 的 JS 挑战，会直接报错并退回第三方接口 | 让 yt-dlp 直连 TikTok 取原始流（**具体码率增益未经稳定实测**） |
+| yt-dlp **版本够新** | **必需** | 全部 TikTok 链接失败并退回低画质 | 原生最高档（实测 1748kbps vs 回退 872kbps） |
+| node | **不需要** | 无影响 | 无（实测与不带 node 结果完全一致） |
 | ffmpeg/ffprobe | 推荐 | 不显示分辨率，高画质合流可能失败 | 分辨率显示 + 音视频合流 |
 | jq **或** python3 | 可选 | 用内置 grep 兜底解析 | 解析更稳 |
 
@@ -107,8 +122,8 @@ TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接"  # 走代理（默认不�
 3. **重试要在脚本层包，不能只靠 `--retries`**。
    CDN 侧常见 `[SSL: UNEXPECTED_EOF_WHILE_READING]`。yt-dlp 自带的 `--retries N` 都挂在**同一条连接**上重试，连接彻底断了它不会重新握手，N 次全废。脚本外层再包 3 轮完整重下才救得回来。
 
-4. **`--js-runtimes node` 不能硬写**。
-   没装 node 的机器上，硬传这个参数会让 yt-dlp 直接报 `Unexpected response from webpage request`，连回退机会都没有。必须先 `command -v node` 检测，存在才传。
+4. **不要传 `--js-runtimes`，也不要建议用户装 node**。
+   实测 `--no-js-runtimes` 与带 node 结果完全一致。真正决定成败的是 yt-dlp 版本，见第 -1 步。
 
 5. **元数据一次调用拿多个字段**：
    `yt-dlp --print "%(uploader)s" --print "%(id)s"` 输出多行，比拼分隔符可靠（`\t` 分隔在某些 shell 里会被 `tr` 吃掉）。
@@ -136,12 +151,12 @@ bytevc1_1080p mp4 1080x1920   ← 通常最高
 
 **源只有 540p 的作者，任何工具都提不上来**——那是他上传时压的。这种情况直接告诉用户「这就是源码率上限」，不要继续折腾。
 
-有无 node 理论上影响能否拿到 TikTok 原始流，但**具体差多少我没能稳定测出来**（见下方「未验证项」）。建议用户装 node，理由是让 yt-dlp 走通原生路径，不是「一定高 25%」。
+画质的决定因素按顺序是：**① yt-dlp 版本够新 ② 作者上传时的源档位 ③ 是否被迫走回退接口**。跟 node 无关。
 
 ## 未验证项（如实记录，别当结论用）
 
-- **有无 node 的码率差**：我一度写「高 25%（2048KB vs 2596KB）」，但这个结论站不住 —— 那两次测试的节点、时刻、TikTok 服务端状态都不同，不是受控对比。
-  后续补充数据（2026-11-27 17:57，同一视频、时长均 12.167s 完整）：回退路径 872kbps，此前原生路径 1748kbps。**方向是回退更低，但仍是跨时刻比较，单样本不足以定倍数。** 结论：node 影响能否走通原生路径；原生路径通常码率更高，具体倍数取决于当时服务端下发。
+- ~~node 影响画质~~ → **已证伪**。2026-11-27 实测 `--no-js-runtimes` 与带 node 输出完全相同（1440×1080 / 1748052bps / 2658571 字节）。此前「没 node 画质差」的观察，实际是**旧版 yt-dlp** 造成的混淆。
+- **回退路径的码率**：同一视频、均 12.167s 完整文件，回退 872kbps vs 原生 1748kbps。方向明确（回退更低），但跨时刻单样本，倍数不可外推。
 - **回退接口的稳定性**：2026-11-27 下午 tikwm 一度返回 403 / 超时，yt-dlp 侧对所有 TikTok 链接统一报 `Unexpected response from webpage request`。这说明外部依赖随时可能整体失效，脚本的失败提示要让用户看懂「是外部拒绝，不是你操作错」。
 
 ## 平台限制
