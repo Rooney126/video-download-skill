@@ -82,10 +82,15 @@ command -v yt-dlp >/dev/null && echo "yt-dlp $(yt-dlp --version)" || echo "缺 y
 **缺必需的 yt-dlp 时，不要试图让用户手敲安装命令——直接跑安装脚本：**
 
 ```bash
-bash install.sh
+bash install.sh --yes     # AI 无人值守用这个：自动装，不问
+bash install.sh           # 人在终端：装前会问 [y/N]
 ```
 
-它会自动识别系统（macOS / Linux / WSL / Windows），列出缺什么、给出对应安装命令，**问过用户才执行**，最后自动跑一遍自检。
+它会自动识别系统（macOS / Linux / WSL / Windows），列出缺什么、给出对应安装命令，装完自动跑自检。
+
+**`--yes` 的边界（重要）**：只在**能确定包管理器**时才会真的执行（brew / apt / winget）。识别不出系统时它只打印建议文字，不会乱跑——因为「建议」和「命令」是分开的（`SUGGEST_IS_CMD`）。AI 看到 `上面只是建议文字` 就该转人工，不要硬试。
+
+**装不了的典型情况**：需要 sudo 但无免密、公司机器限制安装、非标准发行版。这时让用户手动装 `yt-dlp`，其余照常。
 
 ## 第 2 步：跑下载
 
