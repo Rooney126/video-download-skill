@@ -2,6 +2,34 @@
 
 把视频链接丢给 AI，自动下载最高画质版本。
 
+## ⚠️ 先看这个：必须要代理
+
+**在中国大陆直连 TikTok / YouTube 都返回 `000`，走不通。** 实测（2026-11-27）：
+
+```
+tiktok_direct=000
+youtube_direct=000
+```
+
+所以用这个工具的前提是：**你有一个能用的代理**。没代理的话装完了也下不了，先别浪费时间。
+
+代理要求：
+
+- **地址**：常见 `http://127.0.0.1:7890`（Clash）/ `7897`（Clash Verge）
+- **TikTok 出口不能是香港**——香港 IP 常被 TikTok 拒绝，换日本 / 新加坡 / 美国
+- YouTube 对地区不敏感
+
+用法：`TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接"`
+
+自测代理是否可用：
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" --max-time 8 -x http://127.0.0.1:7890 https://www.tiktok.com/
+# 200/302 = 能用， 000 = 不通
+```
+
+---
+
 这个仓库是给**别人的 AI 读的**。你把链接发给 AI 时，它读 [`SKILL.md`](SKILL.md) 就知道该怎么调 `ttdl.sh`。
 
 ## 一键安装（推荐）
