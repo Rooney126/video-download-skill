@@ -167,8 +167,31 @@ tikwm_fallback() {
 # ---------- 主循环 ----------
 if [ "$#" -eq 0 ]; then
   echo "用法: bash ttdl.sh \"链接1\" [\"链接2\" ...]"
-  echo "可选: TTDL_DIR=... TTDL_PROXY=... 见 README"
+  echo ""
+  echo "环境变量:"
+  echo "  TTDL_DIR=~/Movies/搬运     保存目录（默认 ~/Videos/搬运）"
+  echo "  TTDL_PROXY=http://127.0.0.1:7890  代理地址（大陆必需！）"
+  echo "  TTDL_MAX_RES=2160          分辨率上限（默认 1080）"
+  echo ""
+  echo "注意: 大陆直连 TikTok/YouTube 均不通，必须配代理。"
   exit 0
+fi
+
+# 大陆网络环境下没代理 = 必失败。开工前先说清楚，别让用户白等。
+_pre=""
+if [ -n "$PROXY" ]; then
+  _pre=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -x "$PROXY" https://www.tiktok.com/ 2>/dev/null)
+else
+  _pre=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 https://www.tiktok.com/ 2>/dev/null)
+fi
+if [ "${_pre:-000}" = "000" ]; then
+  if [ -z "$PROXY" ]; then
+    echo "⚠ TikTok 直连不通（000）。中国大陆需代理："
+    echo "    TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh \"链接\""
+  else
+    echo "⚠ 代理 $PROXY 访问 TikTok 不通（000），先检查代理是否开启、节点是否可用。"
+  fi
+  echo "   仍会尝试下载，但大概率失败。"
 fi
 
 for url in "$@"; do
