@@ -1,0 +1,97 @@
+---
+name: video-download
+description: Download TikTok / YouTube / Instagram videos at the highest available quality, with a simple ledger. Use when the user sends a video link and wants it saved, re-uploaded, archived, or reposted (搬运/下载/存下来).
+---
+
+# video-download
+
+给一个视频链接，下载最高画质版本并按 `作者_视频ID.mp4` 命名，同时记一行到素材表。
+
+## 什么时候用
+
+用户消息里出现视频链接（tiktok.com / youtube.com / youtu.be / instagram.com），且语境是「下载 / 存下来 / 搬运 / 搬过来」。
+
+不需要问用户任何问题，直接跑脚本。
+
+## 怎么跑
+
+```bash
+bash ttdl.sh "链接1" "链接2"
+```
+
+多个链接一次传，脚本按顺序处理。
+
+可选环境变量：
+
+```bash
+TTDL_DIR=~/Movies/搬运 bash ttdl.sh "链接"          # 自定义保存目录（默认 ~/Videos/搬运）
+TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接" # 走代理（默认不走）
+```
+
+## 依赖
+
+```bash
+macOS:   brew install yt-dlp ffmpeg
+Linux:   pipx install yt-dlp && sudo apt install ffmpeg
+Windows: winget install yt-dlp.yt-dlp ffmpeg
+```
+
+`ffmpeg` 只用于显示分辨率，缺了脚本照样能下。
+
+## 输出长什么样
+
+```
+→ 下载 kudaranai4 / 7701567116046011680
+  OK: ~/Videos/搬运/kudaranai4_7701567116046011680.mp4 (2596KB, 1440x1080)
+=== 完成，素材表: ~/Videos/搬运/素材表.csv ===
+```
+
+素材表 CSV 每行：时间、平台、作者、视频ID、文件路径、备注（标题 + 分辨率）。
+
+## 关键实现约定（改脚本前必读）
+
+这几条都是踩过坑换来的，别简化掉：
+
+1. **取最高画质靠 yt-dlp 的 `-S res,br`**，不是 tikwm 的 `play` 字段。
+   `play` 名义上跟着 `&hd=1` 走，实际固定返回 540p 兼容流（768×576）。真高清在 `hdplay`，而 `hdplay` 有时干脆不存在。
+
+2. **下载前必须 `rm` 同名文件**。
+   yt-dlp 发现目标已存在会静默跳过，不报错，留下的是旧的低清版。配合 `--force-overwrites` 一起用。
+
+3. **重试要在脚本层包，不能只靠 `--retries`**。
+   CDN 侧常见 `[SSL: UNEXPECTED_EOF_WHILE_READING]`。yt-dlp 自带的 `--retries N` 都挂在**同一条连接**上重试，连接彻底断了它不会重新握手，N 次全废。脚本外层再包 3 轮完整重下才救得回来。
+
+4. **元数据一次调用拿多个字段**：
+   `yt-dlp --print "%(uploader)s" --print "%(id)s"` 输出多行，比拼分隔符可靠（`\t` 分隔在某些 shell 里会被 `tr` 吃掉）。
+
+5. **`uploader` 才是账号名，`uploader_id` 是数字 UID**。
+   用 `uploader_id` 命名会得到 `7174046275980002305_7701567116046011680.mp4` 这种鬼东西。
+
+6. **tikwm 回退只在 yt-dlp 彻底失败时用**，且必须优先 `hdplay`：
+   ```python
+   d.get('hdplay') or d.get('play')
+   ```
+
+## 画质天花板的事实
+
+如果用户抱怨画质差，先查源。`yt-dlp -F "链接"` 能看到全部档位：
+
+```
+h264_540p   mp4 576x1024
+bytevc1_720p  mp4 720x1280
+bytevc1_1080p mp4 1080x1920   ← 通常最高
+```
+
+**源只有 540p 的作者，任何工具都提不上来**——那是他上传时压的。这种情况直接告诉用户「这就是源码率上限」，不要继续折腾。
+
+## 平台限制
+
+- **TikTok**：最高一般 1080p，`bytevc1`（H.265）比 `h264` 码率更高画质更好
+- **YouTube**：`-S res,br` 会选到 1080p 内最高；4K 需要 ffmpeg 合流
+- **Instagram**：需要登录 cookie，脚本未内置，会失败
+
+## 不做什么
+
+- 不绕平台的原创检测，不修改视频指纹
+- 不批量爬账号（只处理用户明确给出的链接）
+- 下载的内容版权归原作者，商用需授权
