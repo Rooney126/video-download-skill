@@ -53,9 +53,18 @@ Windows 10 常见。用全路径调用：
 
 没装 `pipx`？先 `brew install pipx` 或 `sudo apt install pipx && pipx ensurepath`。
 
-### 第 2 步：装 node（强烈推荐）
+### 第 2 步：装 node（下 YouTube 必须装）
 
-**不装 node 会怎样**：能下，但画质可能不是最高。
+**分平台看**：
+
+| 平台 | 要 node 吗 | 要 ffmpeg 吗 |
+|---|---|---|
+| TikTok | 不需要 | 不需要 |
+| YouTube | **必须** | **必须** |
+
+不装的话 YouTube 只能拿到 360p 成品流（日志会说 `No supported JavaScript runtime could be found`）。TikTok 不受影响。
+
+**为什么**：
 
 原因：TikTok 网页有一套 JS 挑战，yt-dlp 需要 JS 运行时解开它，才能直接取到 TikTok 的原始流。没有 node 时 yt-dlp 会报 `Unexpected response from webpage request`，只能退回第三方解析接口——回退通常也能拿到 1080p，但**码率是否低于原片、低多少，我没能稳定测出来**。装 node 的作用是让 yt-dlp 走通原生路径。
 
@@ -90,6 +99,20 @@ bash ttdl.sh "https://www.tiktok.com/@someone/video/123456"
 | node | 推荐 | TikTok 走回退接口，画质/码率可能不最优 |
 | ffmpeg / ffprobe | 推荐 | 不显示分辨率；高画质合流可能受影响 |
 | jq 或 python3 | 可选 | 二者都缺时用内置 grep 兜底解析回退 JSON |
+
+## 各平台能力
+
+| 平台 | 最高分辨率 | 备注 |
+|---|---|---|
+| TikTok | 1080p（`bytevc1` H.265 码率更高） | 单文件流，无需合流 |
+| YouTube | **1080p 默认，可开到 4K** | 需 node + ffmpeg；`TTDL_MAX_RES=2160` 开 4K |
+| Instagram | 需要登录 cookie | 未内置，会失败 |
+
+`TTDL_MAX_RES` 控制分辨率上限，默认 `1080`：
+
+```bash
+TTDL_MAX_RES=2160 bash ttdl.sh "https://www.youtube.com/watch?v=xxx"   # 4K
+```
 
 ## 用法
 
