@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# ttdl — 一键下载 TikTok / YouTube 视频（便携版，不依赖任何固定路径）
+# ttdl — 一键下载 TikTok / YouTube / Instagram 视频（最高画质）
 #
 # 用法:
 #   bash ttdl.sh "链接1" "链接2"
-#   TTDL_DIR=~/Downloads/videos bash ttdl.sh "链接"
-#   TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接"   # 你的代理地址
+#   TTDL_DIR=~/Movies/搬运 bash ttdl.sh "链接"
+#   TTDL_PROXY=http://127.0.0.1:7890 bash ttdl.sh "链接"
 #
-# 依赖: yt-dlp（必需）、ffmpeg/ffprobe（可选，用于显示分辨率）、curl（可选，回退用）
-# 说明: 优先 yt-dlp 取最高画质；失败才回退 tikwm。两者都不需要代理也能跑，只是慢。
+# 依赖说明（详见 README）:
+#   必需 - yt-dlp
+#   推荐 - node      : 让 yt-dlp 解开 TikTok 的 JS 挑战，直接拿到原始最高码率
+#   推荐 - ffmpeg    : 用于显示分辨率、合流高画质音视频
+#   可选 - jq 或 python3 : 解析回退接口的 JSON；都没有也能跑（内置 grep 兜底）
 
 set -uo pipefail
 
@@ -19,94 +22,124 @@ UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 mkdir -p "$DIR"
 [ -f "$CSV" ] || echo "时间,平台,作者,视频ID,文件,备注" > "$CSV"
 
-proxy_args() {
-  if [ -n "$PROXY" ]; then
-    printf '%s\0%s\0' "--proxy" "$PROXY"
-  fi
-}
-
 die() { echo "错误: $*" >&2; exit 1; }
 
-command -v yt-dlp >/dev/null 2>&1 || die "没装 yt-dlp。装法：
-  macOS:   brew install yt-dlp ffmpeg
-  Linux:   pipx install yt-dlp  或  sudo apt install yt-dlp ffmpeg
-  Windows: winget install yt-dlp.yt-dlp ffmpeg"
+# ---------- 环境探测 ----------
+HAS_NODE=0;    command -v node    >/dev/null 2>&1 && HAS_NODE=1
+HAS_FFPROBE=0; command -v ffprobe >/dev/null 2>&1 && HAS_FFPROBE=1
 
-probe_res() {
-  if command -v ffprobe >/dev/null 2>&1 && [ -s "$1" ]; then
-    ffprobe -v error -select_streams v:0 -show_entries stream=width,height \
-      -of csv=p=0:s=x "$1" 2>/dev/null
-  fi
-}
+command -v yt-dlp >/dev/null 2>&1 || die "没装 yt-dlp（必需）：
+  macOS:   brew install yt-dlp
+  Linux:   pipx install yt-dlp   或  pip install --user -U yt-dlp
+  Windows: winget install yt-dlp.yt-dlp
+装完再跑。还想顺手解决 node/ffmpeg 就一起装：
+  macOS: brew install yt-dlp node ffmpeg
+  Linux: sudo apt install ffmpeg nodejs && pipx install yt-dlp"
 
-# yt-dlp 调用（数组传参，避免代理参数缺失时留下空参数）
+if [ "$HAS_NODE" -eq 0 ]; then
+  echo "提示: 未检测到 node。yt-dlp 解不开 TikTok 的 JS 挑战，画质可能不是最高。"
+  echo "      想要最高画质请装 node；不装也能下，只是会走回退接口。"
+fi
+if [ "$HAS_FFPROBE" -eq 0 ]; then
+  echo "提示: 未检测到 ffprobe，跳过分辨率显示。装 ffmpeg 即可。"
+fi
+
+# ---------- 工具函数 ----------
+# yt-dlp 调用：只有装了 node 才传 --js-runtimes，硬写会在没 node 的机器上直接报错
 ytdlp() {
-  local -a a=(yt-dlp --js-runtimes node --socket-timeout 20 --retries 3)
+  local -a a=(yt-dlp --socket-timeout 20 --retries 3)
+  [ "$HAS_NODE" -eq 1 ] && a+=(--js-runtimes node)
   [ -n "$PROXY" ] && a+=(--proxy "$PROXY")
   "${a[@]}" "$@"
 }
 
-# 回退：tikwm 解析（仅 TikTok，优先 hdplay，不是 play——play 固定 540p）
+# 从 tikwm 的 JSON 里取字段，优先 jq → python3 → grep 兜底（不强制装解释器）
+json_get() {
+  local key="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -r ".data.$key // empty" 2>/dev/null
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c "import json,sys
+try:
+    d=json.load(sys.stdin).get('data') or {}
+    v=d.get('$key')
+    print(v if v is not None else '')
+except Exception:
+    print('')" 2>/dev/null
+  else
+    grep -oE "\"${key}\":\"[^\"]*\"" | head -1 | sed -E "s/.*:\"([^\"]*)\"/\1/"
+  fi
+}
+
+probe_res() {
+  [ "$HAS_FFPROBE" -eq 1 ] && [ -s "$1" ] && ffprobe -v error -select_streams v:0 \
+    -show_entries stream=width,height -of csv=p=0:s=x "$1" 2>/dev/null
+}
+
+filesize() { stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null || echo 0; }
+
+# 回退：tikwm 解析（仅 TikTok）。必须优先 hdplay，play 固定 540p。
 tikwm_fallback() {
-  local url="$1" author="$2" id="$3" out="$4"
+  local url="$1" out="$2"
   local -a c=(curl -s --max-time 25)
   [ -n "$PROXY" ] && c+=(-x "$PROXY")
   local json link
   json=$("${c[@]}" "https://tikwm.com/api/?url=$url&hd=1" -H "User-Agent: $UA")
-  link=$(printf '%s' "$json" | python3 -c \
-    "import json,sys;d=json.load(sys.stdin)['data'];print(d.get('hdplay') or d.get('play') or '')" 2>/dev/null)
+  link=$(printf '%s' "$json" | json_get hdplay)
+  [ -z "$link" ] && link=$(printf '%s' "$json" | json_get play)
   [ -z "$link" ] && return 1
 
   local -a d=(curl -s --max-time 180 -L)
   [ -n "$PROXY" ] && d+=(-x "$PROXY")
   rm -f "$out"
   "${d[@]}" -o "$out" "$link" -H "User-Agent: $UA" -H "Referer: https://www.tiktok.com/"
-  [ -s "$out" ] && [ "$(stat -c%s "$out" 2>/dev/null || stat -f%z "$out" 2>/dev/null || echo 0)" -gt 20000 ]
+  [ "$(filesize "$out")" -gt 20000 ]
 }
 
+# ---------- 主循环 ----------
 for url in "$@"; do
   case "$url" in
     *tiktok.com*|*youtube.com*|*youtu.be*|*instagram.com*) ;;
     *) echo "跳过(不支持的链接): $url"; continue ;;
   esac
 
-  # 一次调用拿两个字段：yt-dlp 支持多个 --print，每行一个，比拼接分隔符稳
+  # 一次调用取两个字段：多个 --print 各占一行，比拼分隔符可靠
   meta=$(ytdlp --print "%(uploader)s" --print "%(id)s" --skip-download "$url" 2>/dev/null)
   author=$(printf '%s\n' "$meta" | sed -n '1p' | tr -d '/\\:*?"<>|')
   id=$(printf '%s\n' "$meta" | sed -n '2p')
-  # 偶发瞬时失败：补一次
-  if [ -z "${id:-}" ]; then
-    id=$(printf '%s' "$url" | grep -oE '/video/[0-9]+' | grep -oE '[0-9]+')
-  fi
-  [ -z "${author:-}" ] && author=$(ytdlp --print "%(uploader)s" --skip-download "$url" 2>/dev/null | head -1 | tr -d '/\\:*?"<>|')
-  # 最后一道：直接从 URL 的 @handle 抓（元数据请求失败时的兼底，避免得到 unknown 文件名）
+
+  # 元数据拿不到时的两级兜底：URL 里的 @handle → 视频ID → unknown
   if [ -z "${author:-}" ]; then
     author=$(printf '%s' "$url" | sed -n 's#.*/\(@[^/]*\)/.*#\1#p' | sed 's/^@//' | tr -d '/\\:*?"<>|')
+  fi
+  if [ -z "${id:-}" ]; then
+    id=$(printf '%s' "$url" | grep -oE '/video/[0-9]+' | grep -oE '[0-9]+')
   fi
   [ -z "${id:-}" ] && { echo "跳过(解析不到ID): $url"; continue; }
   [ -z "${author:-}" ] && author="unknown"
 
   out="$DIR/${author}_${id}.mp4"
-  rm -f "$out"   # 必须删：yt-dlp 发现同名文件会静默跳过，留下的是旧的低清版
+  # 必须删：yt-dlp 发现同名文件会静默跳过，留下的是旧的低清版
+  rm -f "$out"
 
   echo "→ 下载 $author / $id"
-  # 重试 3 轮：CDN 侧 SSL EOF / 断流是常态，yt-dlp 自带的 3 次重试都捆在单次连接上，
-  # 整条连接挂了它不会重新握手，所以必须在脚本层再包一层
+  # 脚本层重试 3 轮：CDN 侧 SSL EOF/断流是常态，yt-dlp 自带 --retries 全挂在同一条坏连接上
   for attempt in 1 2 3; do
     rm -f "$out"
     ytdlp -f "b[format_id!='download']/b" -S "res,br" --merge-output-format mp4 \
           --force-overwrites -o "$out" "$url" >/tmp/ttdl_last.log 2>&1
-    size=$(stat -c%s "$out" 2>/dev/null || stat -f%z "$out" 2>/dev/null || echo 0)
+    size=$(filesize "$out")
     [ "$size" -gt 20000 ] && break
-    [ $attempt -lt 3 ] && { echo "  第${attempt}轮没成，重试…"; sleep 2; }
+    [ "$attempt" -lt 3 ] && { echo "  第${attempt}轮没成，重试…"; sleep 2; }
   done
-  if [ "$size" -lt 20000 ]; then
+
+  if [ "$(filesize "$out")" -lt 20000 ]; then
     echo "  yt-dlp 没拿到，回退 tikwm"
     case "$url" in
-      *tiktok.com*) tikwm_fallback "$url" "$author" "$id" "$out" ;;
+      *tiktok.com*) tikwm_fallback "$url" "$out" ;;
     esac
-    size=$(stat -c%s "$out" 2>/dev/null || stat -f%z "$out" 2>/dev/null || echo 0)
   fi
+  size=$(filesize "$out")
 
   if [ "$size" -gt 20000 ]; then
     res=$(probe_res "$out")
@@ -116,6 +149,7 @@ for url in "$@"; do
   else
     rm -f "$out"
     echo "  失败: $url"
+    echo "        诊断: 日志见 /tmp/ttdl_last.log"
   fi
 done
 
