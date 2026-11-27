@@ -112,11 +112,13 @@ bash ttdl.sh "https://www.tiktok.com/@someone/video/123456"
 
 ## 各平台能力
 
-| 平台 | 最高分辨率 | 备注 |
-|---|---|---|
-| TikTok | 1080p（`bytevc1` H.265 码率更高） | 单文件流，无需合流 |
-| YouTube | **1080p 默认，可开到 4K** | 需 node + ffmpeg；`TTDL_MAX_RES=2160` 开 4K |
-| Instagram | 需要登录 cookie | 未内置，会失败 |
+| 平台 | 最高分辨率 | 需要代理 | 需要 node+ffmpeg | 备注 |
+|---|---|---|---|---|
+| TikTok | 1080p（`bytevc1` H.265 码率更高） | ✅ 要，且出口非香港 | 不需要 | 单文件流，无需合流 |
+| YouTube | **1080p 默认，可开到 4K** | ✅ 要 | **需要** | `TTDL_MAX_RES=2160` 开 4K |
+| Instagram | 下不了 | — | — | 需登录 cookie，未内置 |
+
+**代理出口实测（2026-11-27）**：`loc=JP` 可正常下载；香港节点常被 TikTok 拒绝。直连（无代理）时 TikTok 与 YouTube 均返回 `000`，走不通。
 
 `TTDL_MAX_RES` 控制分辨率上限，默认 `1080`：
 
