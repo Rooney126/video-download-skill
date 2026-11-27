@@ -7,6 +7,21 @@ description: Download TikTok / YouTube / Instagram videos at the highest availab
 
 给一个视频链接，下载最高画质版本并按 `作者_视频ID.mp4` 命名，同时记一行到素材表。
 
+## 读完这个文件，先跟用户说这几句（别直接默默跑）
+
+用户把仓库丢给你，通常还不知道它具体能做什么。**先用一两句说清楚，再动手：**
+
+> 这个工具能把 TikTok / YouTube 的视频下到本地，自动选最高画质，按「作者_视频ID.mp4」命名，并记一份素材表。
+> 我需要先检查并装好依赖（约 1 分钟），之后你把链接发我就行。
+
+然后按第 -1 → 第 0 → 第 1 → 第 2 步执行。
+
+**首次使用要说清的三个事实**（避免用户预期错位）：
+
+1. **TikTok 最高 1080p**，取决于作者上传的源；源是 540p 就提不上去。
+2. **两个平台在大陆都需要代理**（实测直连均为 000）。TikTok 额外要求出口**不能是香港**（常被拒），日本/新加坡/美国可用；YouTube 对地区不敏感但要 **node + ffmpeg**。
+3. **Instagram 下不了**（需登录 cookie，未内置）。
+
 ## 什么时候用
 
 用户消息里出现视频链接（tiktok.com / youtube.com / youtu.be / instagram.com），且语境是「下载 / 存下来 / 搬运 / 搬过来」。
@@ -17,7 +32,9 @@ description: Download TikTok / YouTube / Instagram videos at the highest availab
 
 **yt-dlp 版本过旧会让所有 TikTok 链接统一报 `Unexpected response from webpage request`**，脚本退回低画质第三方接口，用户看到的就是「画质变差了」，但看不出原因。
 
-**根因是版本，不是缺 node。** 2026-11-27 同机实测：`2026.10.26` 全线失败；升到 `2026.11.23` 后一次成功，且 `--no-js-runtimes`（完全禁用 JS 运行时）下依然拿到 1440×1080 / 1748052bps，与带 node 完全一致。**别让用户去装 node，那是无效动作。**
+**根因是版本，不是缺 TikTok 用不着的东西。** 2026-11-27 同机实测：`2026.10.26` 全线失败；升到 `2026.11.23` 后一次成功，且 TikTok 侧 `--no-js-runtimes`（禁用 JS 运行时）下依然拿到 1440×1080 / 1748052bps，与带 node 完全一致。**TikTok 不需要 node，别为了 TikTok 去折腾它。**
+
+但注意：**YouTube 相反，必须要有 node**（见下方依赖表）。平台不同，别一概而论——这是 2026-11-27 踩过的坑，把 TikTok 的结论套到 YouTube 上，结果 YouTube 只能拿 360p。
 
 ```bash
 yt-dlp --version            # 与 https://github.com/yt-dlp/yt-dlp/releases/latest 对比
