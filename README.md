@@ -33,7 +33,7 @@ bash install.sh
 
 **不装 node 会怎样**：能下，但画质可能不是最高。
 
-原因：TikTok 网页有一套 JS 挑战，yt-dlp 需要 JS 运行时解开它，才能拿到原始最高码率。没有 node 时 yt-dlp 会直接报 `Unexpected response from webpage request`，只能走第三方解析接口回退——回退拿得到 1080p，但码率低于原片。
+原因：TikTok 网页有一套 JS 挑战，yt-dlp 需要 JS 运行时解开它，才能直接取到 TikTok 的原始流。没有 node 时 yt-dlp 会报 `Unexpected response from webpage request`，只能退回第三方解析接口——回退通常也能拿到 1080p，但**码率是否低于原片、低多少，我没能稳定测出来**。装 node 的作用是让 yt-dlp 走通原生路径。
 
 ```bash
 macOS:   brew install node
