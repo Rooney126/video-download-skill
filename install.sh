@@ -24,7 +24,7 @@ if [ "$OS" = "linux" ] && grep -qi microsoft /proc/version 2>/dev/null; then
 fi
 echo "  系统: $OS"
 
-NEED_YTDLP=0; NEED_NODE=0; NEED_FFMPEG=0
+NEED_YTDLP=0; NEED_FFMPEG=0; NEED_UPDATE=0
 
 if has yt-dlp; then
   ok "yt-dlp $(yt-dlp --version 2>/dev/null | head -1)"
@@ -33,9 +33,28 @@ else
 fi
 
 if has node; then
-  ok "node $(node -v 2>/dev/null)"
+  ok "node $(node -v 2>/dev/null)（非必需，实测不影响画质）"
 else
-  miss "node（推荐，解 TikTok JS 挑战用）"; NEED_NODE=1
+  info "node 未安装 —— 不需要，新版 yt-dlp 无 JS 运行时也能拿最高档"
+fi
+
+# yt-dlp 版本过旧才是 TikTok 失败的真正原因（2026-11-27 实测）
+if has yt-dlp; then
+  vv=$(yt-dlp --version 2>/dev/null | head -1)
+  vd=$(printf '%s' "$vv" | grep -oE '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}')
+  if [ -n "$vd" ] && has date; then
+    vs=$(date -d "$(printf '%s' "$vd" | tr '.' '-')" +%s 2>/dev/null)
+    if [ -n "$vs" ]; then
+      days=$(( ( $(date +%s) - vs ) / 86400 ))
+      if [ "$days" -gt 60 ]; then
+        miss "yt-dlp $vv 已 ${days} 天（旧版本会退回低画质）"
+        info "更新: yt-dlp -U   或   pip install --user -U yt-dlp"
+        NEED_UPDATE=1
+      else
+        ok "yt-dlp $vv（${days} 天内，够新）"
+      fi
+    fi
+  fi
 fi
 
 if has ffprobe; then
@@ -50,12 +69,11 @@ else info "jq 和 python3 都没有，回退 JSON 会用 grep 兜底"; fi
 
 # ---------- 组装安装命令 ----------
 SUGGEST=""
-if [ "$NEED_YTDLP" -eq 1 ] || [ "$NEED_NODE" -eq 1 ] || [ "$NEED_FFMPEG" -eq 1 ]; then
+if [ "$NEED_YTDLP" -eq 1 ] || [ "$NEED_FFMPEG" -eq 1 ] || [ "$NEED_UPDATE" -eq 1 ]; then
   case "$OS" in
     macos)
       pkgs=""
       [ "$NEED_YTDLP"  -eq 1 ] && pkgs="$pkgs yt-dlp"
-      [ "$NEED_NODE"   -eq 1 ] && pkgs="$pkgs node"
       [ "$NEED_FFMPEG" -eq 1 ] && pkgs="$pkgs ffmpeg"
       if has brew; then
         SUGGEST="brew install$pkgs"
@@ -67,7 +85,6 @@ if [ "$NEED_YTDLP" -eq 1 ] || [ "$NEED_NODE" -eq 1 ] || [ "$NEED_FFMPEG" -eq 1 ]
     linux|wsl)
       if has apt-get; then
         arch=""
-        [ "$NEED_NODE"   -eq 1 ] && arch="$arch nodejs npm"
         [ "$NEED_FFMPEG" -eq 1 ] && arch="$arch ffmpeg"
         if [ -n "$arch" ]; then
           SUGGEST="sudo apt update && sudo apt install -y$arch"
@@ -87,7 +104,6 @@ if [ "$NEED_YTDLP" -eq 1 ] || [ "$NEED_NODE" -eq 1 ] || [ "$NEED_FFMPEG" -eq 1 ]
     windows)
       pkgs=""
       [ "$NEED_YTDLP"  -eq 1 ] && pkgs="$pkgs yt-dlp.yt-dlp"
-      [ "$NEED_NODE"   -eq 1 ] && pkgs="$pkgs OpenJS.NodeJS.LTS"
       [ "$NEED_FFMPEG" -eq 1 ] && pkgs="$pkgs Gyan.FFmpeg"
       if has winget; then
         SUGGEST="winget install$pkgs"
