@@ -74,7 +74,8 @@ command -v yt-dlp >/dev/null && echo "yt-dlp $(yt-dlp --version)" || echo "缺 y
 |---|---|---|---|
 | **yt-dlp** | **必需** | 脚本直接退出 | — |
 | yt-dlp **版本够新** | **必需** | 全部 TikTok 链接失败并退回低画质 | 原生最高档（实测 1748kbps vs 回退 872kbps） |
-| node | **不需要** | 无影响 | 无（实测与不带 node 结果完全一致） |
+| node | **TikTok 不需要 / YouTube 必须** | YouTube 拿不到高清档（只有 360p 成品流） | YouTube 高清（1080p+） |
+| ffmpeg | **TikTok 不需要 / YouTube 必须** | YouTube 分离流无法合流，退回低清 | YouTube 高画质合流 |
 | ffmpeg/ffprobe | 推荐 | 不显示分辨率，高画质合流可能失败 | 分辨率显示 + 音视频合流 |
 | jq **或** python3 | 可选 | 用内置 grep 兜底解析 | 解析更稳 |
 
@@ -164,8 +165,19 @@ TikTok 对部分地区出口 IP 会直接拒绝，症状与「版本旧」完全
 3. **重试要在脚本层包，不能只靠 `--retries`**。
    CDN 侧常见 `[SSL: UNEXPECTED_EOF_WHILE_READING]`。yt-dlp 自带的 `--retries N` 都挂在**同一条连接**上重试，连接彻底断了它不会重新握手，N 次全废。脚本外层再包 3 轮完整重下才救得回来。
 
-4. **不要传 `--js-runtimes`，也不要建议用户装 node**。
-   实测 `--no-js-runtimes` 与带 node 结果完全一致。真正决定成败的是 yt-dlp 版本，见第 -1 步。
+4. **平台不同，依赖不同**。
+   - **TikTok**：不需要 node。实测 `--no-js-runtimes` 与带 node 输出完全一致（1440×1080 / 1748052bps）。
+   - **YouTube**：**必须要 node**。没有 JS 运行时 yt-dlp 拿不到高清档，只剩 360p 成品流（实测日志：`No supported JavaScript runtime could be found...some formats may be missing`）。
+   - 所以 `--js-runtimes node` 要**按 `command -v node` 条件传**，硬写或完全不写都是错的。
+
+5. **YouTube 的高清档全是 video-only，必须合流**。
+   裸 `-f "b"` 是「同时含音视频的成品流」，YouTube 上最高只有 360p。实测对比：`b` → 640×360 / 444kbps；`bv*[height<=1080]+ba` → 1920×1080 / 3170kbps + 合并。
+   平台选择器必须是：
+   ```
+   TikTok   → b[format_id!='download']/b          （单文件流，不需合流）
+   其他平台  → bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b   （分离流合流）
+   ```
+   分辨率上限用 `TTDL_MAX_RES` 可调，默认 1080。
 
 5. **元数据一次调用拿多个字段**：
    `yt-dlp --print "%(uploader)s" --print "%(id)s"` 输出多行，比拼分隔符可靠（`\t` 分隔在某些 shell 里会被 `tr` 吃掉）。
