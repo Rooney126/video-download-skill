@@ -38,17 +38,14 @@ grep -q 'for attempt in 1 2 3' "$REPO/ttdl.sh" && ok "脚本层重试（应对 S
 grep -q 'force-overwrites'     "$REPO/ttdl.sh" && ok "force-overwrites 已开"        || bad "缺 force-overwrites"
 
 echo "=== 7. 可选依赖必须优雅降级 ==="
-# node 缺失时不能硬传 --js-runtimes，否则 yt-dlp 直接报错
-if grep -q 'js-runtimes' "$REPO/ttdl.sh"; then
-  if grep -qE 'HAS_NODE" -eq 1.*js-runtimes|js-runtimes.*HAS_NODE' "$REPO/ttdl.sh" || \
-     grep -q 'HAS_NODE' "$REPO/ttdl.sh"; then
-    ok "node 缺失时降级（不硬传 --js-runtimes）"
-  else
-    bad "硬写 --js-runtimes node，没装 node 的机器会失败"
-  fi
+# node 不需要：新版 yt-dlp 无 JS 运行时也能拿最高档（2026-11-27 实测）
+if grep -qE '^\s*[^#]*js-runtimes' "$REPO/ttdl.sh"; then
+  bad "仍在传 --js-runtimes，但实测不需要（会误导用户装 node）"
 else
-  ok "不依赖 js-runtimes"
+  ok "不依赖 node / js-runtimes"
 fi
+# 旧版 yt-dlp 才是真根因，脚本必须提示版本
+grep -q 'check_ytdlp_age' "$REPO/ttdl.sh" && ok "检测 yt-dlp 版本新鲜度" || bad "缺版本新鲜度检查"
 # ffprobe 缺失不能影响下载
 grep -q 'HAS_FFPROBE' "$REPO/ttdl.sh" && ok "ffprobe 缺失时降级（不显示分辨率）" || bad "ffprobe 是硬依赖"
 # JSON 解析不能强依赖 python3
@@ -63,7 +60,7 @@ out=$(bash "$REPO/ttdl.sh" 2>&1)
 echo "$out" | grep -q "完成" && ok "空参数正常退出" || bad "空参数行为异常: $out"
 
 echo "=== 9. install.sh 覆盖依赖检测 ==="
-for dep in yt-dlp node ffprobe; do
+for dep in yt-dlp ffprobe; do
   grep -q "has $dep" "$REPO/install.sh" && ok "install.sh 检测 $dep" || bad "install.sh 没检测 $dep"
 done
 grep -q 'read -r ans' "$REPO/install.sh" && ok "install.sh 装前询问，不静默改系统" || bad "install.sh 会静默安装"
