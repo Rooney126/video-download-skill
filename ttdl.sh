@@ -17,6 +17,7 @@ set -uo pipefail
 DIR="${TTDL_DIR:-$HOME/Videos/搬运}"
 CSV="$DIR/素材表.csv"
 PROXY="${TTDL_PROXY:-}"
+MAX_RES="${TTDL_MAX_RES:-1080}"
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 
 mkdir -p "$DIR"
@@ -29,6 +30,8 @@ die() { echo "错误: $*" >&2; exit 1; }
 
 # ---------- 环境探测 ----------
 HAS_FFPROBE=0; command -v ffprobe >/dev/null 2>&1 && HAS_FFPROBE=1
+HAS_NODE=0;    command -v node    >/dev/null 2>&1 && HAS_NODE=1
+HAS_FFMPEG=0;  command -v ffmpeg  >/dev/null 2>&1 && HAS_FFMPEG=1
 
 # yt-dlp 版本过旧会让 TikTok 报 Unexpected response，静默退回低码率接口。
 # 这里只做提示不做阻断：拿不到版本号或解析失败都不影响下载。
@@ -57,6 +60,13 @@ command -v yt-dlp >/dev/null 2>&1 || die "没装 yt-dlp（必需）：
   Linux: sudo apt install ffmpeg && pipx install yt-dlp"
 
 check_ytdlp_age
+case "${*:-}" in
+  *youtube.com*|*youtu.be*)
+    [ "$HAS_NODE" -eq 0 ] && echo "提示: YouTube 需要 node 才能拿到高清档（当前缺 node，可能只有低清）"
+    [ "$HAS_FFMPEG" -eq 0 ] && echo "提示: YouTube 高清需要 ffmpeg 合流（当前缺 ffmpeg，可能只有低清）"
+    ;;
+esac
+
 if [ "$HAS_FFPROBE" -eq 0 ]; then
   echo "提示: 未检测到 ffprobe，跳过分辨率显示。装 ffmpeg 即可。"
 fi
@@ -65,8 +75,25 @@ fi
 # yt-dlp 调用：数组传参，避免代理参数缺失时留下空字符串参数
 ytdlp() {
   local -a a=(yt-dlp --socket-timeout 20 --retries 3)
+  # node 是条件依赖：TikTok 不需要，YouTube 必须有（否则拿不到高清档）
+  [ "$HAS_NODE" -eq 1 ] && a+=(--js-runtimes node)
   [ -n "$PROXY" ] && a+=(--proxy "$PROXY")
   "${a[@]}" "$@"
+}
+
+# 平台相关的 format 选择器。YouTube 高清档全是 video-only，必须 bv+ba 合流，
+# 用裸 "b" 只能拿到 360p 成品流（2026-11-27 实测踩到）。
+format_selector() {
+  case "$1" in
+    *tiktok.com*)
+      # TikTok 是单文件流，直接选最高，不需要合流
+      printf '%s' "b[format_id!='download']/b"
+      ;;
+    *)
+      # 其他平台：分离流合流，分辨率上限由 TTDL_MAX_RES 控制
+      printf '%s' "bv*[height<=${MAX_RES}]+ba/b[height<=${MAX_RES}]/bv*+ba/b"
+      ;;
+  esac
 }
 
 # 从 tikwm 的 JSON 里取字段，优先 jq → python3 → grep 兜底（不强制装解释器）
@@ -173,7 +200,8 @@ for url in "$@"; do
   # 脚本层重试 3 轮：CDN 侧 SSL EOF/断流是常态，yt-dlp 自带 --retries 全挂在同一条坏连接上
   for attempt in 1 2 3; do
     rm -f "$out"
-    ytdlp -f "b[format_id!='download']/b" -S "res,br" --merge-output-format mp4 \
+    _fmt=$(format_selector "$url")
+    ytdlp -f "$_fmt" -S "res,br" --merge-output-format mp4 \
           --force-overwrites -o "$out" "$url" >/tmp/ttdl_last.log 2>&1
     size=$(filesize "$out")
     [ "$size" -gt 20000 ] && break
